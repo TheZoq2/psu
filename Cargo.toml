@@ -1,0 +1,47 @@
+[package]
+name = "controller"
+version = "0.1.0"
+authors = ["TheZoq2 <frans.skarman@gmail.com>"]
+
+
+[profile.release]
+lto = true
+debug = true
+opt-level = 1
+codegen-units = 1
+
+[dependencies]
+
+cortex-m = "0.5.7"
+cortex-m-semihosting = "0.3.0"
+cortex-m-rtfm = {git = "http://github.com/ykomatsu/cortex-m-rtfm", branch = "update"}
+nb = "0.1.1"
+panic-itm = "0.2.0"
+panic-semihosting = "0.3.0"
+hd44780-driver = "0.2.0"
+
+
+[dependencies.embedded-hal]
+version = "0.2.1"
+features = ["unproven"]
+
+[dependencies.arrayvec]
+version = "0.4.7"
+features = []
+default-features = false
+
+[dependencies.stm32f103xx-hal]
+path = "./stm32f103xx-hal"
+# features = ["time_units"]
+
+[dependencies.stm32f103xx]
+version = "0.10.0"
+features = ["rt"]
+
+[dependencies.cortex-m-rt]
+version = "0.5.0"
+features = ["device"]
+
+
+[features]
+rt = ["cortex-m-rt/device"]
