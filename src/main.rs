@@ -14,15 +14,16 @@ extern crate hd44780_driver;
 extern crate itoa;
 
 mod voltage;
+mod keypad;
+mod keymap;
 
 use rtfm::{Threshold, app};
 
 
-use cortex_m::asm;
 use stm32f103xx_hal::prelude::*;
-use stm32f103xx_hal::gpio::gpioa::{PA8, self};
+use stm32f103xx_hal::gpio::gpioa::{PA8, self, PAx};
 use stm32f103xx_hal::gpio::{gpiob};
-use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input};
+use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown};
 use stm32f103xx_hal::pwm;
 use stm32f103xx_hal::time::Hertz;
 use rt::ExceptionFrame;
@@ -46,6 +47,10 @@ type Lcd = hd44780_driver::HD44780<
     >,
 >;
 
+type KeypadInput = PAx<Input<PullDown>>;
+type KeypadOutput = PAx<Output<PushPull>>;
+type Keypad = keypad::Keypad<[KeypadInput; 3], [KeypadOutput; 4], KeypadInput, KeypadOutput>;
+
 
 app! {
     device: stm32f103xx,
@@ -56,10 +61,11 @@ app! {
         static LEFT_PIN: gpiob::PB10<Input<Floating>>;
         static RIGHT_PIN: gpiob::PB11<Input<Floating>>;
         static LCD: Lcd;
+        static KEYPAD: Keypad;
     },
 
     idle: {
-        resources: [LED, PWM, LEFT_PIN, RIGHT_PIN, LCD]
+        resources: [LED, PWM, LEFT_PIN, RIGHT_PIN, LCD, KEYPAD]
     }
 }
 
@@ -71,7 +77,7 @@ fn init(p: init::Peripherals) -> init::LateResources {
     let mut gpioa = p.device.GPIOA.split(&mut rcc.apb2);
     let mut gpiob = p.device.GPIOB.split(&mut rcc.apb2);
     let mut afio = p.device.AFIO.constrain(&mut rcc.apb2);
-    let mut syst = p.core.SYST;
+    let syst = p.core.SYST;
 
     let led = gpioa.pa8.into_push_pull_output(&mut gpioa.crh);
 
@@ -84,6 +90,9 @@ fn init(p: init::Peripherals) -> init::LateResources {
     pwm.set_duty(128);
     pwm.enable();
 
+    ////////////////////////////////////////////////////////////////////////////////
+    // LCD
+    ////////////////////////////////////////////////////////////////////////////////
     let mut lcd = hd44780_driver::HD44780::new_4bit(
             // rs
             gpioa.pa10.into_push_pull_output(&mut gpioa.crh),
@@ -100,17 +109,36 @@ fn init(p: init::Peripherals) -> init::LateResources {
             // Delay
             delay
         );
-
     lcd.clear();
     lcd.set_display_mode(true, false, false);
     lcd.write_str("Hello, world!");
+
+    ////////////////////////////////////////////////////////////////////////////////
+    // Keypad
+    ////////////////////////////////////////////////////////////////////////////////
+
+    let keypad = Keypad::new(
+            [
+                gpioa.pa5.into_pull_down_input(&mut gpioa.crl).downgrade(),
+                gpioa.pa6.into_pull_down_input(&mut gpioa.crl).downgrade(),
+                gpioa.pa7.into_pull_down_input(&mut gpioa.crl).downgrade(),
+            ],
+            [
+                gpioa.pa4.into_push_pull_output(&mut gpioa.crl).downgrade(),
+                gpioa.pa3.into_push_pull_output(&mut gpioa.crl).downgrade(),
+                gpioa.pa2.into_push_pull_output(&mut gpioa.crl).downgrade(),
+                gpioa.pa1.into_push_pull_output(&mut gpioa.crl).downgrade(),
+            ]
+        );
+
 
     init::LateResources {
         LED: led,
         PWM: pwm,
         LEFT_PIN: gpiob.pb10.into_floating_input(&mut gpiob.crh),
         RIGHT_PIN: gpiob.pb11.into_floating_input(&mut gpiob.crh),
-        LCD: lcd
+        LCD: lcd,
+        KEYPAD: keypad
     }
 }
 
@@ -157,6 +185,22 @@ fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
             r.LCD.write_str("PWM: ");
             r.LCD.write_str(pwm_string);
             r.PWM.set_duty(duty as u16);
+        }
+
+
+        {
+            let key = r.KEYPAD.read_first_key();
+
+            key.map(|k| {
+                let translated = keypad::translate_coordinate(
+                    k,
+                    &keymap::KEYMAP
+                );
+
+                r.LCD.set_cursor_pos(10);
+                r.LCD.write_char(translated);
+            });
+
         }
     }
 }
