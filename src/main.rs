@@ -16,6 +16,7 @@ extern crate itoa;
 mod voltage;
 mod keypad;
 mod keymap;
+mod interface;
 
 use rtfm::{Threshold, app};
 

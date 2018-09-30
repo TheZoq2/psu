@@ -2,15 +2,18 @@ use hal::digital::{OutputPin, InputPin};
 
 use core::borrow::{BorrowMut, Borrow};
 
-pub struct Keypad<R, C>
+pub struct Keypad<R, C, I, O>
 where R: Borrow<[I]>,
       C: BorrowMut<[O]>,
+      I: InputPin,
+      O: OutputPin,
 {
     columns: C,
     rows: R,
+    _phantom: ::core::marker::PhantomData<(I, O)>,
 }
 
-impl<R, C, I, O> Keypad<R, C>
+impl<R, C, I, O> Keypad<R, C, I, O>
 where R: Borrow<[I]>,
       C: BorrowMut<[O]>,
       I: InputPin,
