@@ -1,0 +1,9 @@
+[package]
+name = "models"
+version = "0.1.0"
+authors = ["TheZoq2 <frans.skarman@gmail.com>"]
+
+[dependencies]
+scad = "1.0.1"
+nalgebra = "0.16.4"
+scad_util = {git = "https://github.com/TheZoq2/Rust-scad-util.git"}
