@@ -1,4 +1,8 @@
-#[derive(Clone)]
+use itoa;
+use arrayvec::{CapacityError, ArrayString};
+
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum Command {
     Voltage(f32),
     Current(f32),
@@ -6,7 +10,7 @@ pub enum Command {
     OutputOff
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum State {
     Start,
     InputVoltage(u16),
@@ -45,7 +49,7 @@ impl State {
 
             // Confirm
             (State::Confirm(cmd), '1') => (State::Start, Some(cmd)),
-            (State::Confirm(cmd), '2') => (State::Start, None),
+            (State::Confirm(_), '2') => (State::Start, None),
 
 
             // Toggle output
@@ -57,10 +61,35 @@ impl State {
         }
     }
 
-    pub fn get_display(&self, buffer: &mut str) -> usize {
-        unimplemented!()
+    pub fn get_display(&self) -> Result<ArrayString<[u8; 32]>, CapacityError<&str>> {
+        match *self {
+            State::Start => {
+                ArrayString::from("1:V 2:A 3:I/o")
+            }
+            State::InputCurrent(val) => {
+                let mut result = ArrayString::new();
+                let mut buffer = itoa::Buffer::new();
+                result.push_str(buffer.format(val));
+                result.push_str(" mA");
+                Ok(result)
+            }
+            State::InputVoltage(val) => {
+                let mut result = ArrayString::new();
+                let mut buffer = itoa::Buffer::new();
+                result.push_str(buffer.format(val));
+                result.push_str(" mV");
+                Ok(result)
+            }
+            State::Confirm(_) => {
+                ArrayString::from("Confirm 1:y 2:n")
+            }
+            State::ToggleOutput => {
+                ArrayString::from("1:On 2:Off")
+            }
+        }
     }
 }
+
 
 
 fn add_digit(val: u16, digit: char) -> u16 {
@@ -77,5 +106,74 @@ fn char_to_num(digit: char) -> Option<u8>{
     }
     else {
         None
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_input_sequence(seq: &str, initial_state: State) -> (State, Option<Command>)
+    {
+        let mut state = initial_state;
+        let mut last_cmd = None;
+        for input in seq.chars() {
+            let (new_state, new_cmd) = state.update(input);
+            state = new_state;
+            last_cmd = new_cmd;
+        }
+
+        (state, last_cmd)
+    }
+
+    #[test]
+    fn voltage_input() {
+        assert_eq!(
+            run_input_sequence("11234a1", State::Start),
+            (State::Start, Some(Command::Voltage(1.234)))
+        );
+    }
+    #[test]
+    fn current_input() {
+        assert_eq!(
+            run_input_sequence("22", State::Start),
+            (State::InputCurrent(2), None)
+        );
+        assert_eq!(
+            run_input_sequence("22a", State::Start),
+            (State::Confirm(Command::Current(0.002)), None)
+        );
+        assert_eq!(
+            run_input_sequence("2234a1", State::Start),
+            (State::Start, Some(Command::Current(0.234)))
+        );
+    }
+    #[test]
+
+    fn aborted_voltage() {
+        assert_eq!(
+            run_input_sequence("11234a2", State::Start),
+            (State::Start, None)
+        );
+    }
+    #[test]
+    fn aborted_current() {
+        assert_eq!(
+            run_input_sequence("2234a2", State::Start),
+            (State::Start, None)
+        );
+    }
+
+    #[test]
+    fn toggle_output() {
+        assert_eq!(
+            run_input_sequence("31", State::Start),
+            (State::Start, Some(Command::OutputOn))
+        );
+        assert_eq!(
+            run_input_sequence("32", State::Start),
+            (State::Start, Some(Command::OutputOff))
+        );
     }
 }

@@ -3,14 +3,15 @@ unexport CARGO_INCREMENTAL
 TARGET_NAME=thumbv7m-none-eabi
 PROJECT_NAME=controller
 
-all:
-	make build
-	make gdb
-
 
 release:
 	make rb
 	make gdb_release
+
+all:
+	make build
+	make gdb
+
 
 rb:
 	cargo build --release

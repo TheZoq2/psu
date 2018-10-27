@@ -12,6 +12,7 @@ extern crate stm32f103xx_hal;
 extern crate stm32f103xx;
 extern crate hd44780_driver;
 extern crate itoa;
+extern crate arrayvec;
 
 mod voltage;
 mod keypad;
@@ -21,9 +22,10 @@ mod interface;
 use rtfm::{Threshold, app};
 
 
+use cortex_m::asm;
 use stm32f103xx_hal::prelude::*;
-use stm32f103xx_hal::gpio::gpioa::{PA8, self, PAx};
-use stm32f103xx_hal::gpio::{gpiob};
+use stm32f103xx_hal::gpio::gpioa::{PA8, self};
+use stm32f103xx_hal::gpio::gpiob::{PBx, self};
 use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown};
 use stm32f103xx_hal::pwm;
 use stm32f103xx_hal::time::Hertz;
@@ -48,8 +50,8 @@ type Lcd = hd44780_driver::HD44780<
     >,
 >;
 
-type KeypadInput = PAx<Input<PullDown>>;
-type KeypadOutput = PAx<Output<PushPull>>;
+type KeypadInput = PBx<Input<PullDown>>;
+type KeypadOutput = PBx<Output<PushPull>>;
 type Keypad = keypad::Keypad<[KeypadInput; 3], [KeypadOutput; 4], KeypadInput, KeypadOutput>;
 
 
@@ -67,7 +69,14 @@ app! {
 
     idle: {
         resources: [LED, PWM, LEFT_PIN, RIGHT_PIN, LCD, KEYPAD]
-    }
+    },
+
+    tasks: {
+        TIM2: {
+            resources: [LED],
+            path: interrupt_tim2,
+        }
+    },
 }
 
 
@@ -120,15 +129,15 @@ fn init(p: init::Peripherals) -> init::LateResources {
 
     let keypad = Keypad::new(
             [
-                gpioa.pa5.into_pull_down_input(&mut gpioa.crl).downgrade(),
-                gpioa.pa6.into_pull_down_input(&mut gpioa.crl).downgrade(),
-                gpioa.pa7.into_pull_down_input(&mut gpioa.crl).downgrade(),
+                gpiob.pb9.into_pull_down_input(&mut gpiob.crh).downgrade(),
+                gpiob.pb8.into_pull_down_input(&mut gpiob.crh).downgrade(),
+                gpiob.pb7.into_pull_down_input(&mut gpiob.crl).downgrade(),
             ],
             [
-                gpioa.pa4.into_push_pull_output(&mut gpioa.crl).downgrade(),
-                gpioa.pa3.into_push_pull_output(&mut gpioa.crl).downgrade(),
-                gpioa.pa2.into_push_pull_output(&mut gpioa.crl).downgrade(),
-                gpioa.pa1.into_push_pull_output(&mut gpioa.crl).downgrade(),
+                gpiob.pb6.into_push_pull_output(&mut gpiob.crl).downgrade(),
+                gpiob.pb5.into_push_pull_output(&mut gpiob.crl).downgrade(),
+                gpiob.pb4.into_push_pull_output(&mut gpiob.crl).downgrade(),
+                gpiob.pb3.into_push_pull_output(&mut gpiob.crl).downgrade(),
             ]
         );
 
@@ -144,66 +153,55 @@ fn init(p: init::Peripherals) -> init::LateResources {
 }
 
 fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
-    r.LED.set_high();
+    let min_voltage: f32 = 1.293;
+    let max_voltage: f32 = 18.93 + min_voltage;
+    let voltage_multiplyer = 1.04;
+    
+    let mut last_key = None;
 
-    let min_voltage: f32 = 1.25;
-    let max_voltage: f32 = 20.25;
-    let mut voltage: f32 = 5.;
+    let mut interface_state = interface::State::Start;
 
     loop {
-        let old_voltage = voltage;
-        if r.LEFT_PIN.is_low() {
-            voltage += 0.1;
-            while r.LEFT_PIN.is_low() {}
-        }
-        if r.RIGHT_PIN.is_low() {
-            voltage -= 0.1;
-            while r.RIGHT_PIN.is_low() {}
-        }
-
-        if voltage < min_voltage {
-            voltage = min_voltage
-        }
-        if voltage > max_voltage {
-            voltage = max_voltage;
-        }
-
-        if old_voltage != voltage {
-            r.LCD.clear();
-            let mut buffer = itoa::Buffer::new();
-            let voltage_string = buffer.format((voltage * 1000.) as i32);
-            r.LCD.write_str(voltage_string);
-            r.LCD.write_str(" mV");
-
-            let duty = (r.PWM.get_max_duty() as f32) * voltage::pwm_percentage_for_voltage(
-                voltage,
-                min_voltage,
-                max_voltage
-            );
-            let mut buffer = itoa::Buffer::new();
-            let pwm_string = buffer.format(duty as u16);
-            r.LCD.set_cursor_pos(40);
-            r.LCD.write_str("PWM: ");
-            r.LCD.write_str(pwm_string);
-            r.PWM.set_duty(duty as u16);
-        }
-
-
         {
             let key = r.KEYPAD.read_first_key();
 
-            key.map(|k| {
-                let translated = keypad::translate_coordinate(
-                    k,
-                    &keymap::KEYMAP
-                );
+            match key {
+                Some(coords) => {
+                    let key_char = keypad::translate_coordinate(coords, &keymap::KEYMAP);
 
-                r.LCD.set_cursor_pos(10);
-                r.LCD.write_char(translated);
-            });
+                    if Some(key_char) != last_key {
+                        // Process the key
+                        let (new_state, command) = interface_state.update(key_char);
+                        interface_state = new_state;
 
+                        if let Some(interface::Command::Voltage(val)) = command {
+                            let duty_percentage = voltage::pwm_percentage_for_voltage(
+                                val,
+                                min_voltage,
+                                max_voltage
+                            );
+
+                            let duty = ((r.PWM.get_max_duty() as f32) * duty_percentage * voltage_multiplyer);
+                            r.PWM.set_duty(duty as u16)
+                        }
+
+                        r.LCD.clear();
+                        r.LCD.write_str(&interface_state.get_display().unwrap());
+
+                        last_key = Some(key_char)
+                    }
+                }
+                None => {
+                    last_key = None
+                }
+            }
         }
     }
+}
+
+
+fn interrupt_tim2(_t: &mut Threshold, r: TIM2::Resources) {
+    asm::bkpt();
 }
 
 
