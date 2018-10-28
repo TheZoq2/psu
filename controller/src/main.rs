@@ -179,6 +179,10 @@ fn init(p: init::Peripherals) -> init::LateResources {
     ////////////////////////////////////////////////////////////////////////////////
     let state = State::new(output_sensor.is_low());
 
+
+    // Write the initial state to the LCD
+    write_line(1, &mut lcd, &state.get_display().unwrap());
+
     init::LateResources {
         PWM: pwm,
         LCD: lcd,
@@ -195,6 +199,11 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     let mut last_key = None;
 
     let mut interface_state = interface::State::Start;
+    let message = interface_state.get_display().unwrap();
+
+    r.LCD.claim_mut(t, |lcd, _t| {
+        write_line(0, lcd, &message);
+    });
 
     loop {
         let key = r.KEYPAD.read_first_key();

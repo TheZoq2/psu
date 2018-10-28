@@ -12,7 +12,7 @@ impl State {
         Self {
             set_voltage: 0.,
             output_switch_state,
-            output_enabled: false
+            output_enabled: !output_switch_state
         }
     }
 
