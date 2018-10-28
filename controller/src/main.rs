@@ -116,7 +116,7 @@ fn init(p: init::Peripherals) -> init::LateResources {
     //                              PWM
     ////////////////////////////////////////////////////////////////////////////////
     let pwm_pin = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
-    let mut pwm = p.device.TIM2.pwm(pwm_pin, &mut afio.mapr, Hertz(20_000), clocks, &mut rcc.apb1);
+    let mut pwm = p.device.TIM2.pwm(pwm_pin, &mut afio.mapr, Hertz(10_000), clocks, &mut rcc.apb1);
     pwm.set_duty(0);
     pwm.enable();
 
@@ -219,7 +219,6 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
 
                     let message = interface_state.get_display().unwrap();
 
-
                     r.LCD.claim_mut(t, |lcd, _t| {
                         write_line(0, lcd, &message);
                     });
@@ -238,9 +237,9 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
 }
 
 fn state_changed(t: &mut Threshold, mut r: EXTI1::Resources) {
-    let min_voltage: f32 = 1.295;
+    let min_voltage: f32 = 1.291;
     let max_voltage: f32 = 18.95 + min_voltage;
-    let voltage_multiplyer = 1.05;
+    let voltage_multiplyer = 1.046;
 
     let duty_percentage = voltage::pwm_percentage_for_voltage(
         r.STATE.output_voltage(),
