@@ -13,6 +13,8 @@ extern crate stm32f103xx;
 extern crate hd44780_driver;
 extern crate itoa;
 extern crate arrayvec;
+#[macro_use]
+extern crate nb;
 
 mod voltage;
 mod keypad;
@@ -27,9 +29,12 @@ use stm32f103xx_hal::prelude::*;
 use stm32f103xx_hal::gpio::gpioa::{PA8, self};
 use stm32f103xx_hal::gpio::gpiob::{PBx, self};
 use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown};
+use stm32f103xx_hal::timer::{Timer};
 use stm32f103xx_hal::pwm;
 use stm32f103xx_hal::time::Hertz;
 use rt::ExceptionFrame;
+
+use stm32f103xx::{TIM2, TIM3};
 
 type Lcd = hd44780_driver::HD44780<
     // Delay
@@ -61,21 +66,14 @@ app! {
     resources: {
         static LED: PA8<Output<PushPull>>;
         static PWM: pwm::Pwm<stm32f103xx::TIM2, pwm::C1>;
-        static LEFT_PIN: gpiob::PB10<Input<Floating>>;
-        static RIGHT_PIN: gpiob::PB11<Input<Floating>>;
         static LCD: Lcd;
         static KEYPAD: Keypad;
+        static KEY_DELAY_TIMER: Timer<TIM3>;
     },
 
     idle: {
-        resources: [LED, PWM, LEFT_PIN, RIGHT_PIN, LCD, KEYPAD]
-    },
-
-    tasks: {
-        TIM2: {
-            resources: [LED],
-            path: interrupt_tim2,
-        }
+        resources: [LED, PWM, LCD, KEYPAD, KEY_DELAY_TIMER]
+        // resources: [LED, LCD, KEYPAD, KEY_DELAY_TIMER]
     },
 }
 
@@ -89,8 +87,11 @@ fn init(p: init::Peripherals) -> init::LateResources {
     let mut afio = p.device.AFIO.constrain(&mut rcc.apb2);
     let syst = p.core.SYST;
 
+    afio.mapr.disable_jtag();
+
     let led = gpioa.pa8.into_push_pull_output(&mut gpioa.crh);
 
+    let timer = Timer::tim3(p.device.TIM3, Hertz(100), clocks, &mut rcc.apb1);
 
     let delay = stm32f103xx_hal::delay::Delay::new(syst, clocks);
 
@@ -145,10 +146,9 @@ fn init(p: init::Peripherals) -> init::LateResources {
     init::LateResources {
         LED: led,
         PWM: pwm,
-        LEFT_PIN: gpiob.pb10.into_floating_input(&mut gpiob.crh),
-        RIGHT_PIN: gpiob.pb11.into_floating_input(&mut gpiob.crh),
         LCD: lcd,
-        KEYPAD: keypad
+        KEYPAD: keypad,
+        KEY_DELAY_TIMER: timer,
     }
 }
 
@@ -190,6 +190,9 @@ fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
 
                         last_key = Some(key_char)
                     }
+
+                    r.KEY_DELAY_TIMER.start(Hertz(100));
+                    block!(r.KEY_DELAY_TIMER.wait());
                 }
                 None => {
                     last_key = None
@@ -197,11 +200,6 @@ fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
             }
         }
     }
-}
-
-
-fn interrupt_tim2(_t: &mut Threshold, r: TIM2::Resources) {
-    asm::bkpt();
 }
 
 
