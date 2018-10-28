@@ -26,9 +26,9 @@ use rtfm::{Threshold, app};
 
 use cortex_m::asm;
 use stm32f103xx_hal::prelude::*;
-use stm32f103xx_hal::gpio::gpioa::{PA8, self};
+use stm32f103xx_hal::gpio::gpioa::{PA8, PA9, self};
 use stm32f103xx_hal::gpio::gpiob::{PBx, self};
-use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown};
+use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown, PullUp};
 use stm32f103xx_hal::timer::{Timer};
 use stm32f103xx_hal::pwm;
 use stm32f103xx_hal::time::Hertz;
@@ -64,16 +64,15 @@ app! {
     device: stm32f103xx,
 
     resources: {
-        static LED: PA8<Output<PushPull>>;
         static PWM: pwm::Pwm<stm32f103xx::TIM2, pwm::C1>;
         static LCD: Lcd;
         static KEYPAD: Keypad;
         static KEY_DELAY_TIMER: Timer<TIM3>;
+        static OUTPUT_SENSOR: PA8<Input<PullUp>>;
     },
 
     idle: {
-        resources: [LED, PWM, LCD, KEYPAD, KEY_DELAY_TIMER]
-        // resources: [LED, LCD, KEYPAD, KEY_DELAY_TIMER]
+        resources: [PWM, LCD, KEYPAD, KEY_DELAY_TIMER, OUTPUT_SENSOR]
     },
 }
 
@@ -89,8 +88,6 @@ fn init(p: init::Peripherals) -> init::LateResources {
 
     afio.mapr.disable_jtag();
 
-    let led = gpioa.pa8.into_push_pull_output(&mut gpioa.crh);
-
     let timer = Timer::tim3(p.device.TIM3, Hertz(100), clocks, &mut rcc.apb1);
 
     let delay = stm32f103xx_hal::delay::Delay::new(syst, clocks);
@@ -98,7 +95,7 @@ fn init(p: init::Peripherals) -> init::LateResources {
 
     let pwm_pin = gpioa.pa0.into_alternate_push_pull(&mut gpioa.crl);
     let mut pwm = p.device.TIM2.pwm(pwm_pin, &mut afio.mapr, Hertz(20_000), clocks, &mut rcc.apb1);
-    pwm.set_duty(128);
+    pwm.set_duty(0);
     pwm.enable();
 
     ////////////////////////////////////////////////////////////////////////////////
@@ -144,19 +141,19 @@ fn init(p: init::Peripherals) -> init::LateResources {
 
 
     init::LateResources {
-        LED: led,
         PWM: pwm,
         LCD: lcd,
         KEYPAD: keypad,
         KEY_DELAY_TIMER: timer,
+        OUTPUT_SENSOR: gpioa.pa8.into_pull_up_input(&mut gpioa.crh),
     }
 }
 
 fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
-    let min_voltage: f32 = 1.293;
-    let max_voltage: f32 = 18.93 + min_voltage;
-    let voltage_multiplyer = 1.04;
-    
+    let min_voltage: f32 = 1.295;
+    let max_voltage: f32 = 18.95 + min_voltage;
+    let voltage_multiplyer = 1.05;
+
     let mut last_key = None;
 
     let mut interface_state = interface::State::Start;
@@ -187,6 +184,14 @@ fn idle(_t: &mut Threshold, r: idle::Resources) -> ! {
 
                         r.LCD.clear();
                         r.LCD.write_str(&interface_state.get_display().unwrap());
+
+                        r.LCD.set_cursor_pos(40);
+                        if r.OUTPUT_SENSOR.is_high() {
+                            r.LCD.write_str("Output off");
+                        }
+                        else {
+                            r.LCD.write_str("Output on");
+                        }
 
                         last_key = Some(key_char)
                     }
