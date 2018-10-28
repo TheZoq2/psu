@@ -25,15 +25,14 @@ mod state;
 use rtfm::{Threshold, app};
 
 
-use cortex_m::asm;
 use stm32f103xx_hal::prelude::*;
-use stm32f103xx_hal::gpio::gpioa::{PA8, PA9, self};
+use stm32f103xx_hal::gpio::gpioa::{PA8, self};
 use stm32f103xx_hal::gpio::gpiob::{PBx, self};
-use stm32f103xx_hal::gpio::{Output, PushPull, Floating, Input, PullDown, PullUp};
+use stm32f103xx_hal::gpio::{Output, PushPull, Input, PullDown, PullUp};
 use stm32f103xx_hal::timer::{Timer};
 use stm32f103xx_hal::pwm;
 use stm32f103xx_hal::time::Hertz;
-use stm32f103xx::{TIM2, TIM3};
+use stm32f103xx::{TIM3};
 use stm32f103xx::{EXTI, NVIC};
 use rt::ExceptionFrame;
 use rtfm::Resource;
@@ -245,7 +244,7 @@ fn idle(t: &mut Threshold, mut r: idle::Resources) -> ! {
     }
 }
 
-fn state_changed(t: &mut Threshold, mut r: EXTI1::Resources) {
+fn state_changed(_t: &mut Threshold, mut r: EXTI1::Resources) {
     let min_voltage: f32 = 1.291;
     let max_voltage: f32 = 18.95 + min_voltage;
     let voltage_multiplyer = 1.046;
@@ -264,7 +263,7 @@ fn state_changed(t: &mut Threshold, mut r: EXTI1::Resources) {
 }
 
 
-fn output_switch_changed(t: &mut Threshold, mut r: EXTI9_5::Resources) {
+fn output_switch_changed(_t: &mut Threshold, mut r: EXTI9_5::Resources) {
     r.STATE.set_output_switch_state(r.OUTPUT_SENSOR.is_low());
 
     // Clear this interrupt and raise the state change interrupt

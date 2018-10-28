@@ -74,15 +74,3 @@ pub fn translate_coordinate((row, col): (u8, u8), translation: &[&[char]]) -> ch
     translation[col as usize][row as usize]
 }
 
-pub fn translate_coordinates(
-    coords: &[(u8, u8)],
-    amount: usize,
-    buffer: &mut [char],
-    translation: &[&[char]]
-) {
-    for i in 0..amount {
-        let (row, col) = coords[i];
-        buffer[i] = translate_coordinate((row, col), translation);
-    }
-}
-
