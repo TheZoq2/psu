@@ -1,0 +1,9 @@
+[package]
+name = "testing"
+version = "0.1.0"
+authors = ["TheZoq2 <frans.skarman@gmail.com>"]
+
+[dependencies]
+
+arrayvec = {version = "0.4.7", default-features = false}
+itoa = {version = "0.4.3", default-features = false}
